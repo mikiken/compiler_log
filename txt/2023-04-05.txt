@@ -1,0 +1,2394 @@
+==============================================================
+Guild: メモ帳
+Channel: seccamp2022 / 作業ログ
+==============================================================
+
+[08/02/2022 11:59 AM] mikiken#5554
+**関数定義**
+
+
+[08/02/2022 12:01 PM] mikiken#5554
+```C
+typedef struct Function Function;
+
+struct Function {
+  Function *next;
+  Type *type;       // 型
+  char *name;       // 関数名
+  Lvar params_head; // 引数リストの先頭
+  Node *body;       // statement
+  Lvar *locals;     // ローカル変数のリスト
+};
+```
+
+
+[08/02/2022 2:52 PM] mikiken#5554
+1.整数を返すだけの関数が定義できるように
+
+
+[08/06/2022 1:42 AM] mikiken#5554
+offset計算するところでセグフォしてる
+
+
+[08/10/2022 9:22 AM] mikiken#5554
+```C
+struct Expr typecheck_expression(struct AnalyzerState *ptr_ps,
+                                 const struct UntypedExpr *ref_uexpr)
+```
+
+
+[08/10/2022 10:00 AM] mikiken#5554
+hsjoihs「なので、それに一つずつ型情報を付与していく必要があります」
+hsjoihs「やり方は二通りあって、一つは、いまある Node を書き換えて、型情報を書き込んでいく方法」
+hsjoihs「もう一つは、今ある AST を見て、再帰的に『その AST の、型がついたバージョン』を作っていく方法」
+
+
+[08/10/2022 10:43 AM] mikiken#5554
+
+
+{Attachments}
+https://cdn.discordapp.com/attachments/1003859454191751178/1006739418532544643/unknown.png
+
+
+[08/10/2022 8:25 PM] mikiken#5554
+問題点
+そもそも関数名とか型の情報とか渡ってなくね?
+引数としてlistを受け取ってるけど結局使ってなくね?
+
+
+[08/11/2022 11:32 PM] mikiken#5554
+**~~TODO~~(対応済み)**
+変数のサイズによってレジスタの名前が変わるので、それに対応できるように`codegen.c` を書き換える
+
+
+[08/12/2022 12:24 AM] mikiken#5554
+http://yuma.ohgami.jp/Introduction-to-x86_64-Machine-Language/02_basic_operations.html
+
+
+[08/22/2022 11:06 PM] mikiken#5554
+**Step 21-2 配列からポインタへの暗黙の型変換を実装する**
+・右辺に配列型変数が現れた場合　`a` → `&a` のようにキャストする
+・明示的に`&a` と書いたときは、上記のキャストを行わないようにする
+・`*a = 1;` みたいな式が書けるように(次のステップで`a[i]` を`*(a+i)` に読み替えるための準備)
+・`sizeof(a)` は`(1つ分のサイズ) * (要素数)` を返す
+
+
+[08/23/2022 1:21 AM] mikiken#5554
+新たに処理を書き足す必要がある(と思われる)演算子
+・`+` `-` (済)
+・`==` `!=` `<` `<=` `>` `>=` → そもそもポインタに対しても対応していないので後回し
+・`=` (済)
+・`*` (dereference) オペランドとして直接配列が来た場合に対応する必要あり (済)
+・`sizeof` (済)
+※`&` について 明示的に`&` を書いているからキャストする必要ないはず)
+
+
+[08/23/2022 1:50 AM] mikiken#5554
+ポインタの加算・減算のうち
+・`lhs` が数字/`rhs` がポインタのものは実装していないはず
+
+
+[08/23/2022 6:51 PM] mikiken#5554
+代入式の左辺(`lhs` )に直接配列が来ることはありえない
+
+
+[08/23/2022 6:52 PM] mikiken#5554
+```C
+#include <stdio.h>
+int main(char *argv[], int argc) {
+  int a[2];
+  a = 80;
+  printf("%d", a[0]);
+  return 0;
+}
+```
+```
+./Main.c: In function ‘main’:
+./Main.c:4:5: error: assignment to expression with array type
+    4 |   a = 80;
+      |     ^
+
+```
+
+
+[08/31/2022 3:58 PM] mikiken#5554
+**TODO**
+・`int` を4byteに
+・`(任意の型)*` を8byteに
+・関数呼び出しの際、rspを16byte境界にalignする
+
+
+[08/31/2022 5:31 PM] mikiken#5554
+```C
+void alloc4(int **p, int a, int b, int c, int d) {
+  *p = malloc(sizeof(int) * 5);
+  (*p)[0] = a;
+  (*p)[1] = b;
+  (*p)[2] = c;
+  (*p)[3] = d;
+  (*p)[4] = 100;
+}
+```
+```
+int alloc4(); int main(){int *p; alloc4(&p, 1, 2, 4, 8); return *(p+2);} => 100
+```
+これはgccが`int` を4byteとして扱っている一方、9ccでは8byteとして扱っているため
+
+
+[08/31/2022 5:40 PM] mikiken#5554
+```
+int main() {int a; a = 4; int b[2]; int *p; p = b; *p = 1; *(p+1) = 2; return a + *p + *(p+1);} => 7 expected, but got 5
+```
+となるが、
+```
+int main() {int a; a = 4; int b[2]; int *p; p = b; *p = 1; *(p-1) = 2; return a + *p + *(p-1);} => 7
+```
+とすると上手くいく
+
+
+[09/10/2022 8:33 AM] mikiken#5554
+> PUSH copies the specified register, memory location, or immediate value to the top of stack. This instruction decrements the stack pointer by 2, 4, or 8, depending on the operand size, and then copies the operand into the memory location pointed to by SS:rSP.
+
+
+[09/10/2022 8:34 AM] mikiken#5554
+> POP copies a word, doubleword, or quadword from the memory location pointed to by the SS:rSP registers (the top of stack) to a specified register or memory location. Then, the rSP register is incremented by 2, 4, or 8. After the POP operation, rSP points to the new top of stack.
+
+
+[09/25/2022 9:11 PM] mikiken#5554
+> For addition, either both operands shall have arithmetic type, or one operand shall be a pointer to a complete object type and the other shall have integer type. (Incrementing is equivalent to adding 1.)
+
+
+[09/25/2022 9:12 PM] mikiken#5554
+> For subtraction, one of the following shall hold:
+> ・both operands have arithmetic type;
+> ・both operands are pointers to qualified or unqualified versions of compatible complete object types; or
+> ・the left operand is a pointer to a complete object type and the right operand has integer type.
+> (Decrementing is equivalent to subtracting 1.)
+ってなってるけど、スタック操作(`pop`とか`push`)を行うときは8byteレジスタしか引数に取れない?(あまりよく分かってない)
+
+
+[09/25/2022 9:12 PM] mikiken#5554
+http://port70.net/~nsz/c/c11/n1570.html#6.5.6
+
+
+[09/28/2022 5:00 PM] mikiken#5554
+もしかしたらローカル変数のメモリ上での配置の仕方がgccとかと違うかも(おそらく逆順)
+
+
+[09/28/2022 5:00 PM] mikiken#5554
+そもそもこういうテストケース
+```C
+int main() {int a; int b; a = 2; b = 8; int *p; int *q; p = &a; q = &b; return q - p;}
+```
+に対して1が帰ってくる保証はないのでは?
+(`int a` と `int b` が連続して確保される保証はないため)
+
+
+[09/28/2022 5:17 PM] mikiken#5554
+> 2つのポインタを減算する場合において、その両方のポインタが同じ配列オブジェクトの要素か、その配列オブジェクトの最後の要素を一つ越えたところを指していない場合。(6.5.6)
+
+
+[09/28/2022 5:17 PM] mikiken#5554
+http://www.c-lang.org/detail/undefined_behavior.html
+
+
+[10/07/2022 5:39 PM] mikiken#5554
+**Step 25 文字列リテラルを実装する**
+
+
+[10/07/2022 5:40 PM] mikiken#5554
+tokenizerはこういうコードを追加すればいいはず
+
+
+[10/07/2022 5:41 PM] mikiken#5554
+```C
+    // 文字列リテラルの場合 
+     if (startswith(p, "\"")) { 
+       char *start = ++p; // ダブルクオートを読み飛ばす 
+       while (*p != '\"') 
+         p++; 
+       cur = new_token(TK_STR, cur, start, p - 1); 
+       p++; // ダブルクオートを読み飛ばす 
+       continue; 
+     }
+```
+
+
+[10/07/2022 5:44 PM] mikiken#5554
+`launch.json`の`args`にテストケースを渡すとき、ダブルクオーテーションを`\\\"`とエスケープしないといけない
+
+
+[10/09/2022 11:07 PM] mikiken#5554
+文字列リテラルを変更しようとするとセグフォするのを実験
+```C
+#include <stdio.h>
+char *str = "Hello, implementation-defined behavior!";
+
+int main(int argc, int **argv) {
+  printf("%s\n", str);
+  str[5] = '!'; // ここでセグフォする(けどコンパイル時にwarningさえ出ない)
+  printf("%s\n", str);
+  return 0;
+}
+```
+
+
+[10/09/2022 11:09 PM] mikiken#5554
+文字列リテラルが`char`の配列として扱われるのは、例外的な場合のみ
+```C
+char str[] = "Good bye"; // 初期化式だからcharの配列として書ける
+str[5] = 'B';
+```
+
+
+[10/09/2022 11:10 PM] mikiken#5554
+なのでこの段階では気にする必要はなく、文字列リテラルはすべてグローバルに確保して、その領域へのアドレスを返すようにすればOKなはず
+
+
+[10/10/2022 2:25 AM] mikiken#5554
+既存のコンパイラの出力を観察してみる
+```C
+int main() { char *str = "abc"; return str[0]; }
+```
+に対する出力
+
+
+[10/10/2022 2:26 AM] mikiken#5554
+x86-64 clang 15.0.0
+https://godbolt.org/z/dYWx1zchq
+
+{Embed}
+https://godbolt.org/z/dYWx1zchq
+Compiler Explorer - C (x86-64 clang 15.0.0)
+int main() { char *str = "abc"; return str[0]; }
+https://images-ext-2.discordapp.net/external/jGTpmeGUxpLs6alHNMw1q89lgpPm0EpuohWGxIobk-o/%3Fraw%3Dtrue/https/github.com/compiler-explorer/infra/blob/main/logo/favicon.png
+
+
+[10/10/2022 2:26 AM] mikiken#5554
+x86-64 gcc 12.2
+https://godbolt.org/z/Y4c8r1Exr
+
+{Embed}
+https://godbolt.org/z/Y4c8r1Exr
+Compiler Explorer - C (x86-64 gcc 12.2)
+int main() { char *str = "abc"; return str[0]; }
+https://images-ext-2.discordapp.net/external/jGTpmeGUxpLs6alHNMw1q89lgpPm0EpuohWGxIobk-o/%3Fraw%3Dtrue/https/github.com/compiler-explorer/infra/blob/main/logo/favicon.png
+
+
+[10/11/2022 6:58 AM] mikiken#5554
+**エスケープシーケンスを実装する**
+> Escape sequences are defined using themselves here. E.g. '\n' is implemented using '\n'. This tautological definition works because the compiler that compiles our compiler knows what '\n' actually is. In other words, we "inherit" the ASCII code of '\n' from the compiler that compiles our compiler, so we don't have to teach the actual code here. This fact has huge implications not only for the correctness of the compiler but also for the security of the generated code. For more info, read "Reflections on Trusting Trust" by Ken Thompson.
+> https://github.com/rui314/chibicc/wiki/thompson1984.pdf
+
+
+[10/11/2022 6:59 AM] mikiken#5554
+https://github.com/rui314/chibicc/blob/ad7749f2fad87a4b1df644d4e1c345b3f87d386d/tokenize.c
+
+{Embed}
+https://github.com/rui314/chibicc/blob/ad7749f2fad87a4b1df644d4e1c345b3f87d386d/tokenize.c
+chibicc/tokenize.c at ad7749f2fad87a4b1df644d4e1c345b3f87d386d · ru...
+A small C compiler. Contribute to rui314/chibicc development by creating an account on GitHub.
+https://images-ext-1.discordapp.net/external/BZz5v82krgIoVW42SJfqqS9WahmlHR6NL9PR674rjWg/https/opengraph.githubassets.com/9aae4711251a70fc3107b9452c18ff129ca07fd4cef63635c316cf9bf2363339/rui314/chibicc
+
+
+[10/12/2022 10:21 PM] mikiken#5554
+・最後の"を認識して、文字列リテラルの文字数分のcharの配列を確保する
+・一文字ずつ読んでいって、エスケープシーケンスじゃなかったらそのまま配列のi文字目に書き込む
+・エスケープシーケンスの場合はうまく扱えるように文字を置き換えて配列のi文字目に格納する
+
+
+[10/17/2022 6:05 PM] mikiken#5554
+**Step27 行コメントとブロックコメントを実装する**
+たぶん`tokenize.c`に少し処理足せば一瞬でできるので、とりあえず後回しにして、Step28に進む(今のままだとテストが書きにくいので)
+
+
+[10/17/2022 6:23 PM] mikiken#5554
+**Step28 テストをCで書き直す**
+
+
+[10/17/2022 11:30 PM] mikiken#5554
+**`printf`を使うにあたって**
+・フォーマット指定子(`%d`など)については、とりあえず引数さえちゃんと渡せば大丈夫なはず
+・可変長引数を取る関数を呼ぶので、`call`命令の前で浮動小数点数引数の個数を`al`に入れておく必要あり
+
+
+[10/18/2022 2:40 PM] mikiken#5554
+デバッグ用
+https://godbolt.org/z/6fb9K6c1a
+
+{Embed}
+https://godbolt.org/z/6fb9K6c1a
+Compiler Explorer - C (x86-64 gcc 12.1)
+int printf();
+int exit();
+
+int assert(int expected, int actual, char *code) {
+  if (expected == actual) {
+    printf("%s => %d\n", code, actual);
+  }
+  else {
+    printf("%s => %d expected, but got %d\n", code, expected, actual);
+    exit(1);
+  }
+  return 0;
+}
+
+int main() {
+    return 0;
+}
+https://images-ext-2.discordapp.net/external/jGTpmeGUxpLs6alHNMw1q89lgpPm0EpuohWGxIobk-o/%3Fraw%3Dtrue/https/github.com/compiler-explorer/infra/blob/main/logo/favicon.png
+
+
+[10/21/2022 7:12 PM] mikiken#5554
+**実装するときに考えてたことのメモ**
+何したらいいか分かりづらいので、とりあえず、`test.c`1ファイルに全ての処理をベタ書きしてみる
+
+
+[10/21/2022 7:12 PM] mikiken#5554
+まずは整数1つを返すテストケースを通せるようにする
+
+
+[10/21/2022 7:12 PM] mikiken#5554
+これが通ったので、あとはいい感じに拡張すればいけそう
+
+
+[10/21/2022 7:13 PM] mikiken#5554
+関数の引数に渡せるのはexpressionであってstatementは渡せないので、statementを渡したいときは、別途関数を作って、引数としてその関数(の返り値)を渡せば良さそう
+
+
+[10/21/2022 7:14 PM] mikiken#5554
+全てのテストケースを`test.c`に移すと800行とかになったので、いくつかのファイルに分割した方が良さそう
+
+
+[10/22/2022 2:37 AM] mikiken#5554
+適当に7ファイルくらいに分割した
+
+
+[10/22/2022 2:38 AM] mikiken#5554
+`make clean`が、サブディレクトリに対してもいい感じに作用してほしい
+
+
+[10/22/2022 2:38 AM] mikiken#5554
+```makefile
+# ccに渡すコンパイラオプションを指定
+CFLAGS=-std=c11 -g -static
+# src/*.cをソースとして指定
+SRCS=$(wildcard src/*.c)
+# SRCSの末尾を.oに置換した名前のファイルをオブジェクトファイルとして指定
+OBJS=$(SRCS:.c=.o)
+# テストのソースを指定
+TEST_SRCS=$(wildcard test/test_src/*.c)
+
+# 9ccの依存関係を指定し、それに対するルールを設定
+9cc: $(OBJS)
+                $(CC) -o 9cc $(OBJS) $(LDFLAGS)
+
+# OBJSの依存関係を指定
+$(OBJS): src/9cc.h
+
+# testの依存関係を指定し、それに対するルールを設定
+test: 9cc
+                ./test/test_driver.sh
+
+# cleanに対するルールを設定
+clean:
+                rm -f 9cc src/*.o test/*.s tmp* .gdb_history peda-session-*.txt src/peda-session-*.txt .vscode/peda-session-*.txt
+
+# testとcleanをダミーターゲット(実際に存在しないファイル)に指定
+.PHONY: test clean
+```
+
+
+[10/22/2022 2:39 AM] mikiken#5554
+`SUBDIR`的な変数を用意して、ゴニャゴニャしたらうまくいきそう(?)
+
+
+[10/24/2022 5:59 PM] mikiken#5554
+**%演算子を実装する**
+
+
+[10/24/2022 5:59 PM] mikiken#5554
+http://port70.net/~nsz/c/c11/n1570.html#6.5.5
+
+
+[10/24/2022 6:00 PM] mikiken#5554
+> Each of the operands shall have arithmetic type. The operands of the % operator shall have integer type.
+
+
+[10/24/2022 11:39 PM] mikiken#5554
+例のドーナツのテストケース
+https://github.com/hsjoihs/c-compiler/blob/master/misc/donut_donut.c
+
+{Embed}
+https://github.com/hsjoihs/c-compiler/blob/master/misc/donut_donut.c
+c-compiler/donut_donut.c at master · hsjoihs/c-compiler
+seccamp2018 c compiler. Contribute to hsjoihs/c-compiler development by creating an account on GitHub.
+https://images-ext-1.discordapp.net/external/vLLxuiw2QPIVJJL3UOAtcL5b-2yN48BTZnHG5BhWzYM/https/opengraph.githubassets.com/bb4c508b95c6221a9f1d8542652c6e03ea8ffa887d98ad3c322ba72dbe3d95aa/hsjoihs/c-compiler
+
+
+[10/24/2022 11:41 PM] mikiken#5554
+フォーマットしたやつ
+```C
+int putchar();
+void *memset();
+
+int m(int a, int b) {
+  return (a * b + 5000) / 10000;
+}
+
+void a(int *c, int *s, int d, int t) {
+  int k = m(*c, d) - m(*s, t);
+  int l = m(*s, d) + m(*c, t);
+  *c = k;
+  *s = l;
+}
+
+int usleep();
+int printf();
+
+int main() {
+  int z[1760];
+  char b[1760];
+  printf("\e[2J");
+  int s = 10000;
+  int q = s;
+  int r = 0;
+  int u = s;
+  int v = 0;
+  for (;; a(&q, &r, s - 8, 400), a(&u, &v, s - 2, 200)) {
+    memset(b, 32, 1760);
+    memset(z, 0, 7040);
+    int l = 0;
+    int p = s;
+    for (int i = 0; i < 88; i++, a(&p, &l, 9974 + i % 2, 714)) {
+      int w = 0;
+      int e = s;
+      for (int j = 0; j < 314; j++, a(&e, &w, s - 2, 200)) {
+        int f = p + 2 * s;
+        int g = s * s / (m(m(w, f), r) + m(l, q) + 5 * s);
+        int t = m(m(w, q), f) - m(l, r);
+        int x = 40 + 30 * m(g, m(m(e, u), f) - m(t, v)) / s;
+        int y = 12 + 15 * m(g, m(m(e, v), f) + m(t, u)) / s;
+        int o = x + 80 * y;
+        int N = 8 * (m(m(l, r) - m(m(w, q), p), u) - m(m(w, r), p) - m(l, q) - m(m(e, v), p)) / s;
+        if (y > 0 && g > z[o] && y < 22 && x > 0 && 80 > x) {
+          z[o] = g;
+          b[o] = ".,-~:;=!*#$@"[N >= 1 ? N : 0] + 0;
+        }
+      }
+    }
+    printf("\e[H");
+    for (int k = 0; k < 1761; k++)
+      putchar(k % 80 ? b[k] : 10);
+    printf("Author: @a1k0n. Rewritten by @hsjoihs so that it works without floating types.\nNote that rounding errors gradually reduce the donut's size.\n");
+    usleep(50000);
+  }
+  return 0;
+}
+```
+
+
+[10/24/2022 11:42 PM] mikiken#5554
+これ見ると、
+・初期化式全般
+・`void`型
+~~・`&&`演算子(というか論理演算子全般)~~
+~~・インクリメント`++`とデクリメント`--`演算子~~
+あたりが足りなさそう
+
+
+[10/24/2022 11:44 PM] mikiken#5554
+ということで今週はこの辺を追加していきたい
+
+
+[10/24/2022 11:45 PM] mikiken#5554
+あとポインタを返り値とするようなテストケースが全然ない気がするので、それも追加したい
+
+
+[10/25/2022 1:09 PM] mikiken#5554
+あと`sizeof(int)`みたいな記法が未実装
+
+
+[10/25/2022 1:46 PM] mikiken#5554
+https://zenn.dev/kaityo256/articles/increment_operators
+
+{Embed}
+https://zenn.dev/kaityo256/articles/increment_operators
+インクリメント演算子とコンパイラの気持ち
+https://images-ext-1.discordapp.net/external/2hQcq75oaK53d8oF9NABWkucZBvABQ6kQISpdUd_BH8/https/res.cloudinary.com/zenn/image/upload/s--j0O_bGLi--/co_rgb%3A222%252Cg_south_west%252Cl_text%3Anotosansjp-medium.otf_37_bold%3A%2525E3%252583%2525AD%2525E3%252583%25259C%2525E5%2525A4%2525AA%252Cx_203%252Cy_98/c_fit%252Cco_rgb%3A222%252Cg_north_west%252Cl_text%3Anotosansjp-medium.otf_70_bold%3A%2525E3%252582%2525A4%2525E3%252583%2525B3%2525E3%252582%2525AF%2525E3%252583%2525AA%2525E3%252583%2525A1%2525E3%252583%2525B3%2525E3%252583%252588%2525E6%2525BC%252594%2525E7%2525AE%252597%2525E5%2525AD%252590%2525E3%252581%2525A8%2525E3%252582%2525B3%2525E3%252583%2525B3%2525E3%252583%252591%2525E3%252582%2525A4%2525E3%252583%2525A9%2525E3%252581%2525AE%2525E6%2525B0%252597%2525E6%25258C%252581%2525E3%252581%2525A1%252Cw_1010%252Cx_90%252Cy_100/g_south_west%252Ch_90%252Cl_fetch%3AaHR0cHM6Ly9yZXMuY2xvdWRpbmFyeS5jb20vemVubi9pbWFnZS9mZXRjaC9zLS1semRkTWZ2Ry0tL2NfbGltaXQlMkNmX2F1dG8lMkNmbF9wcm9ncmVzc2l2ZSUyQ3FfYXV0byUyQ3dfNzAvaHR0cHM6Ly9zdG9yYWdlLmdvb2dsZWFwaXMuY29tL3plbm4tdXNlci11cGxvYWQvYXZhdGFyLzgzOGNiYTA0OWMuanBlZw%3D%3D%252Cr_max%252Cw_90%252Cx_87%252Cy_72/v1627274783/default/og-base_z4sxah.png
+
+
+[11/08/2022 7:39 PM] mikiken#5554
+未初期化のポインタを参照するのは未定義動作だが、その場合も考慮した実装
+https://github.com/karintou8710/kcc/commit/8d56aea5861c72eae36a723aa662123268d67c2c
+
+{Embed}
+https://github.com/karintou8710/kcc/commit/8d56aea5861c72eae36a723aa662123268d67c2c
+Fix 'logical and' and 'logical or' bug · karintou8710/kcc@8d56aea
+https://images-ext-1.discordapp.net/external/DLNgU5QQMbzkJYWVD-cL7jZx7m8PSjomCahIyOpp8dU/https/opengraph.githubassets.com/f9334fb266b23efb68634e93238acf1fb8791560b14205ea3815bfbf0afb4b76/karintou8710/kcc/commit/8d56aea5861c72eae36a723aa662123268d67c2c
+
+
+[11/08/2022 7:40 PM] mikiken#5554
+https://github.com/rui314/chibicc/commit/f30f78175c1fd50c8cdd132ca804573ae0d18453
+
+{Embed}
+https://github.com/rui314/chibicc/commit/f30f78175c1fd50c8cdd132ca804573ae0d18453
+Add && and || · rui314/chibicc@f30f781
+https://images-ext-2.discordapp.net/external/x9XnbVPGp1aoYDvflByrrdm1L8eY4k3R5lF815QNumo/https/opengraph.githubassets.com/8b181f61450adf248433b456607e346386d195ac1adc1be153a25d072486ca0e/rui314/chibicc/commit/f30f78175c1fd50c8cdd132ca804573ae0d18453
+
+
+[11/08/2022 7:41 PM] mikiken#5554
+(左辺で未定義動作踏んだらセグフォするとは思うけど)
+
+
+[11/08/2022 7:42 PM] mikiken#5554
+とりあえず未定義動作踏まなければ大丈夫なはずなので、一旦これでいく
+
+
+[11/13/2022 11:16 PM] mikiken#5554
+**BNFの修正点**
+・関数宣言を追加
+・`Func_name(void)` みたいな記法に対応
+・関数のパラメータあたりのBNFがいろいろアレ
+
+
+[11/15/2022 2:18 PM] mikiken#5554
+~~関数宣言に今のところパラメータが書けない~~ (対応済)
+
+
+[11/15/2022 3:05 PM] mikiken#5554
+**Step ?? カンマ演算子を追加する**
+
+
+[11/15/2022 3:17 PM] mikiken#5554
+
+
+{Attachments}
+https://cdn.discordapp.com/attachments/1003859454191751178/1041960148983357470/image.png
+
+
+[11/15/2022 3:18 PM] mikiken#5554
+こんな感じの構文木にパースしないといけないはず
+
+
+[12/01/2022 4:22 PM] mikiken#5554
+**例のドーナツを動かす**
+
+
+[12/01/2022 4:22 PM] mikiken#5554
+
+
+{Attachments}
+https://cdn.discordapp.com/attachments/1003859454191751178/1047774726442991616/image.png
+
+
+[12/01/2022 4:37 PM] mikiken#5554
+**破滅の刃() ~無限デバッグ編~**
+
+
+[12/01/2022 4:37 PM] mikiken#5554
+原因調査
+
+
+[12/01/2022 4:37 PM] mikiken#5554
+まず、`z[o]`のところで落ちてそう
+
+
+[12/01/2022 4:38 PM] mikiken#5554
+`o`の値を調べてみると、定義した配列の要素数を大幅に上回っているので、これのせいで変なメモリアクセスが発生し、セグフォしてるっぽい
+
+
+[12/01/2022 4:39 PM] mikiken#5554
+ということで各種変数の値について、ccの出力と9ccの出力を比較してみると、2ステップ目で既に`N`の値が異なっていることが分かる(上記画像参照)
+
+
+[12/01/2022 4:39 PM] mikiken#5554
+(恐らく)`N`の値がバグってることで、後々`o`も変な値になってる
+
+
+[12/01/2022 4:40 PM] mikiken#5554
+ということで
+```C
+N = 8 * (m(m(l, r) - m(m(w, q), p), u) - m(m(w, r), p) - m(l, q) - m(m(e, v), p)) / s;
+```
+の各オペランドごとに値を出力してみた
+
+
+[12/01/2022 4:41 PM] mikiken#5554
+
+
+{Attachments}
+https://cdn.discordapp.com/attachments/1003859454191751178/1047779556779634718/message.txt
+
+
+[12/01/2022 4:42 PM] mikiken#5554
+`op1`の値がバグってる
+
+
+[12/01/2022 4:55 PM] mikiken#5554
+さらに`op1`を分解
+
+
+[12/01/2022 4:55 PM] mikiken#5554
+
+
+{Attachments}
+https://cdn.discordapp.com/attachments/1003859454191751178/1047783018573602816/message.txt
+
+
+[12/01/2022 4:56 PM] mikiken#5554
+ちなみにここまで、こんな感じで展開している
+```C
+        printf("<< %d >>\n", ++count);
+        if (count >= 90)
+          return 0;
+
+        // N = 8 * (m(m(l, r) - m(m(w, q), p), u) - m(m(w, r), p) - m(l, q) - m(m(e, v), p)) / s;
+        int opp1;
+        int opp2;
+        int diff;
+        int op1;
+        int op2;
+        int op3;
+        int op4;
+
+        opp1 = m(l, r);
+        opp2 = m(m(w, q), p);
+        diff = opp1 - opp2;
+        //op1 = m(m(l, r) - m(m(w, q), p), u);
+        op1 = m(diff, u);
+        op2 = m(m(w, r), p);
+        op3 = m(l, q);
+        op4 = m(m(e, v), p);
+        N = 8 * (op1 - op2 - op3 - op4) / s;
+
+        printf("opp1 = %d\n", opp1);
+        printf("opp2 = %d\n", opp2);
+        printf("diff = %d\n", diff);
+        printf("u    = %d\n", u);
+        printf("op1  = %d\n\n", op1);
+
+        /*
+        printf("op1 = %d\n", op1);
+        printf("op2 = %d\n", op2);
+        printf("op3 = %d\n", op3);
+        printf("op4 = %d\n", op4);
+        printf("N   = %d\n\n", N);
+        */
+        /*
+        printf("f = %d\n", f);
+        printf("g = %d\n", g);
+        printf("t = %d\n", t);
+        printf("x = %d\n", x);
+        printf("y = %d\n", y);
+        printf("o = %d\n", o);
+        printf("N = %d\n\n", N);
+        */
+```
+
+
+[12/01/2022 4:59 PM] mikiken#5554
+関数`int m(int a, int b);`が返している値がおかしいと考えられる
+
+
+[12/01/2022 5:24 PM] mikiken#5554
+テストコード```C
+int m(int a, int b) {
+  return (a * b + 5000) / 10000;
+}
+
+int printf();
+
+int main() {
+  printf("m(   0, 10000)  = %d\n", m(0, 10000));
+  printf("m(-200, 10000)  = %d\n", m(-200, 10000));
+  printf("m(-400, 10000)  = %d\n", m(-400, 10000));
+  printf("m(-600, 10000)  = %d\n", m(-600, 10000));
+  printf("m(-800, 10000)  = %d\n", m(-800, 10000));
+  printf("m(-999, 10000)  = %d\n", m(-999, 10000));
+  printf("m(-1198, 10000) = %d\n", m(-1198, 10000));
+  printf("m(-1397, 10000) = %d\n", m(-1397, 10000));
+  printf("m(-1595, 10000) = %d\n", m(-1595, 10000));
+  printf("m(-1792, 10000) = %d\n", m(-1792, 10000));
+  printf("m(-1989, 10000) = %d\n", m(-1989, 10000));
+
+  return 0;
+}
+```
+
+
+[12/01/2022 5:25 PM] mikiken#5554
+出力結果
+```
+m(   0, 10000)  = 0                                             m(   0, 10000)  = 0
+m(-200, 10000)  = 429297                                      | m(-200, 10000)  = -199
+m(-400, 10000)  = 429097                                      | m(-400, 10000)  = -399
+m(-600, 10000)  = 428897                                      | m(-600, 10000)  = -599
+m(-800, 10000)  = 428697                                      | m(-800, 10000)  = -799
+m(-999, 10000)  = 428498                                      | m(-999, 10000)  = -998
+m(-1198, 10000) = 428299                                      | m(-1198, 10000) = -1197
+m(-1397, 10000) = 428100                                      | m(-1397, 10000) = -1396
+m(-1595, 10000) = 427902                                      | m(-1595, 10000) = -1594
+m(-1792, 10000) = 427705                                      | m(-1792, 10000) = -1791
+m(-1989, 10000) = 427508                                      | m(-1989, 10000) = -1988
+```
+
+
+[12/01/2022 5:48 PM] mikiken#5554
+`m`のどこで事故ってるか調査
+```C
+int printf();
+
+int m(int a, int b) {
+  printf("a = %d\n", a);
+  printf("b = %d\n", b);
+
+  int product;
+  int sum;
+  int div;
+
+  product = a * b;
+  sum = product + 5000;
+  div = sum / 10000;
+
+  printf("product = %d\n", product);
+  printf("sum     = %d\n", sum);
+  printf("div      = %d\n", div);
+  return div;
+  //return (a * b + 5000) / 10000;
+}
+
+int main() {
+  printf("m(-200, 10000)  = %d\n", m(-200, 10000));
+  /*
+  printf("m(   0, 10000)  = %d\n", m(0, 10000));
+
+  printf("m(-400, 10000)  = %d\n", m(-400, 10000));
+  printf("m(-600, 10000)  = %d\n", m(-600, 10000));
+  printf("m(-800, 10000)  = %d\n", m(-800, 10000));
+  printf("m(-999, 10000)  = %d\n", m(-999, 10000));
+  printf("m(-1198, 10000) = %d\n", m(-1198, 10000));
+  printf("m(-1397, 10000) = %d\n", m(-1397, 10000));
+  printf("m(-1595, 10000) = %d\n", m(-1595, 10000));
+  printf("m(-1792, 10000) = %d\n", m(-1792, 10000));
+  printf("m(-1989, 10000) = %d\n", m(-1989, 10000));
+  */
+
+  return 0;
+}
+```
+
+
+[12/01/2022 6:50 PM] mikiken#5554
+`m`のどこで事故ってるか調査
+```C
+int printf();
+
+int m(int a, int b) {
+  printf("a = %d\n", a);
+  printf("b = %d\n", b);
+
+  int product;
+  int sum;
+  int div;
+
+  product = a * b;
+  sum = product + 5000;
+  div = sum / 10000;
+
+  printf("product = %d\n", product);
+  printf("sum     = %d\n", sum);
+  printf("div      = %d\n", div);
+  return div;
+  //return (a * b + 5000) / 10000;
+}
+
+int main() {
+  printf("m(-200, 10000)  = %d\n", m(-200, 10000));
+  /*
+  printf("m(   0, 10000)  = %d\n", m(0, 10000));
+
+  printf("m(-400, 10000)  = %d\n", m(-400, 10000));
+  printf("m(-600, 10000)  = %d\n", m(-600, 10000));
+  printf("m(-800, 10000)  = %d\n", m(-800, 10000));
+  printf("m(-999, 10000)  = %d\n", m(-999, 10000));
+  printf("m(-1198, 10000) = %d\n", m(-1198, 10000));
+  printf("m(-1397, 10000) = %d\n", m(-1397, 10000));
+  printf("m(-1595, 10000) = %d\n", m(-1595, 10000));
+  printf("m(-1792, 10000) = %d\n", m(-1792, 10000));
+  printf("m(-1989, 10000) = %d\n", m(-1989, 10000));
+  */
+
+  return 0;
+}
+```
+
+
+[12/01/2022 6:51 PM] mikiken#5554
+符号拡張を型のサイズによって変える必要があるっぽい
+
+
+[12/01/2022 6:52 PM] mikiken#5554
+https://sozysozbot.github.io/seccamp-2022-c-compiler-seminar/#permalink_4b6f8c795bc832e32c3a6745ceb68082
+
+
+[12/01/2022 6:52 PM] mikiken#5554
+https://twitter.com/lemolatoon1/status/1598236585547350016
+
+{Embed}
+lemolatoon (@lemolatoon1)
+https://twitter.com/lemolatoon1/status/1598236585547350016
+@mikikeen これ僕もバグらせたんですが、ログを「割り算」などで検索すると当時の会話でそのことについて話してます。https://t.co/pCdLWPAyRm
+Twitter
+
+
+[12/01/2022 6:53 PM] mikiken#5554
+型のサイズに応じて符号拡張する関数書いたら、ドーナツ出た
+(ただ、まだセグフォする)
+https://twitter.com/mikikeen/status/1598726498948591616
+
+{Attachments}
+https://cdn.discordapp.com/attachments/1003859454191751178/1047812743664783360/image.png
+
+{Embed}
+mikiken (@mikikeen)
+https://twitter.com/mikikeen/status/1598726498948591616
+自作コンパイラ、伝家の宝刀†printfデバッグ†してたら、printfの有無で挙動変わって頭抱えてる
+Likes
+149
+Twitter
+
+
+[12/12/2022 7:50 PM] mikiken#5554
+久々にデバッグの続きをやっていく～～
+
+
+[12/12/2022 7:51 PM] mikiken#5554
+とりあえず
+・符号拡張直したやつ
+・配列をポインタにキャストし忘れてたやつを追加
+をcommitした
+
+
+[12/12/2022 7:52 PM] mikiken#5554
+それで何がどうなっていたか、忘れてたのでMakeFileの差分もdiscardした
+
+
+[12/12/2022 7:52 PM] mikiken#5554
+codegen.cのコメントアウトでいい感じにnodeの種類を表示するやつはそのまま置いてある
+
+
+[12/12/2022 7:53 PM] mikiken#5554
+https://github.com/hsjoihs/c-compiler/blob/17f53331a19e37594d07e69cc70bc71ae30eb6f4/misc/donut_donut.c
+
+{Embed}
+https://github.com/hsjoihs/c-compiler/blob/17f53331a19e37594d07e69cc70bc71ae30eb6f4/misc/donut_donut.c
+c-compiler/donut_donut.c at 17f53331a19e37594d07e69cc70bc71ae30eb6f...
+seccamp2018 c compiler. Contribute to hsjoihs/c-compiler development by creating an account on GitHub.
+https://images-ext-1.discordapp.net/external/vLLxuiw2QPIVJJL3UOAtcL5b-2yN48BTZnHG5BhWzYM/https/opengraph.githubassets.com/bb4c508b95c6221a9f1d8542652c6e03ea8ffa887d98ad3c322ba72dbe3d95aa/hsjoihs/c-compiler
+
+
+[12/12/2022 7:54 PM] mikiken#5554
+donutifyされてるやつを普通に戻して初期化式を排除して、下のメッセージを消去したdonut.cがこれ
+
+
+[12/12/2022 7:55 PM] mikiken#5554
+
+
+{Attachments}
+https://cdn.discordapp.com/attachments/1003859454191751178/1051814513470603264/donut_basic.c
+
+
+[12/12/2022 7:55 PM] mikiken#5554
+とりあえず9ccでコンパイルしてみる
+
+
+[12/12/2022 7:55 PM] mikiken#5554
+usleepでセグフォしてる
+
+
+[12/12/2022 7:56 PM] mikiken#5554
+こういうの
+```C
+void usleep();
+int printf();
+
+int main() {
+  usleep(2000000);
+  printf("Now testing usleep() calling.\n");
+}
+```
+
+
+[12/12/2022 7:56 PM] mikiken#5554
+がコンパイルできるか確認したところ、これは通る
+
+
+[12/14/2022 2:36 AM] mikiken#5554
+```
+Program received signal SIGSEGV, Segmentation fault.
+[----------------------------------registers-----------------------------------]
+RAX: 0x7fffff7feffc 
+RBX: 0x2 
+RCX: 0xc8 
+RDX: 0x270e 
+RSI: 0x270e 
+RDI: 0xffffe7ea 
+RBP: 0x7fffff7ff000 --> 0x7fffff7ff048 --> 0x7fffffffddd0 --> 0x0 
+RSP: 0x7fffff7feff0 
+RIP: 0x555555555165 (<m+12>:    mov    DWORD PTR [rax],edi)
+R8 : 0xa ('\n')
+R9 : 0x3 
+R10: 0x555555558010 --> 0x7e2d2c2e00485b1b 
+R11: 0x246 
+R12: 0x555555555070 (<_start>:  endbr64)
+R13: 0x7fffffffdec0 --> 0x1 
+R14: 0x0 
+R15: 0x0
+EFLAGS: 0x10206 (carry PARITY adjust zero sign trap INTERRUPT direction overflow)
+[-------------------------------------code-------------------------------------]
+   0x55555555515a <m+1>:        mov    rbp,rsp
+   0x55555555515d <m+4>:        sub    rsp,0x10
+   0x555555555161 <m+8>:        lea    rax,[rbp-0x4]
+=> 0x555555555165 <m+12>:       mov    DWORD PTR [rax],edi
+   0x555555555167 <m+14>:       lea    rax,[rbp-0x8]
+   0x55555555516b <m+18>:       mov    DWORD PTR [rax],esi
+   0x55555555516d <m+20>:       lea    rdi,[rbp-0x4]
+   0x555555555171 <m+24>:       push   rdi
+[------------------------------------stack-------------------------------------]
+Invalid $SP address: 0x7fffff7feff0
+[------------------------------------------------------------------------------]
+Legend: code, data, rodata, value
+Stopped reason: SIGSEGV
+m () at tmp.s:18
+18        mov DWORD PTR [rax], edi
+gdb-peda$ q
+```
+
+
+[12/14/2022 1:15 PM] mikiken#5554
+ワンチャン原因これか?
+
+
+[12/14/2022 1:15 PM] mikiken#5554
+```
+mikiken@DESKTOP-CM4259U:~/compiler/9cc$ ulimit -a
+core file size          (blocks, -c) 0
+data seg size           (kbytes, -d) unlimited
+scheduling priority             (-e) 0
+file size               (blocks, -f) unlimited
+pending signals                 (-i) 31257
+max locked memory       (kbytes, -l) 64
+max memory size         (kbytes, -m) unlimited
+open files                      (-n) 1048576
+pipe size            (512 bytes, -p) 8
+POSIX message queues     (bytes, -q) 819200
+real-time priority              (-r) 0
+stack size              (kbytes, -s) 8192
+cpu time               (seconds, -t) unlimited
+max user processes              (-u) 31257
+virtual memory          (kbytes, -v) unlimited
+file locks                      (-x) unlimited
+```
+
+
+[12/14/2022 1:18 PM] mikiken#5554
+
+
+{Attachments}
+https://cdn.discordapp.com/attachments/1003859454191751178/1052439399419347024/image.png
+
+
+[12/14/2022 1:18 PM] mikiken#5554
+はい正解～～～
+
+
+[12/14/2022 4:55 PM] mikiken#5554
+https://youreingaming.blog.fc2.com/blog-entry-92.html
+
+{Embed}
+https://youreingaming.blog.fc2.com/blog-entry-92.html
+C/C++でデカい配列がSegmentation faultを吐くときに読む記事 - PC関連
+顛末自作のmodintライブラリのテストがてら、\( 10^6 \times 10 \)サイズの配列を宣言してみたらsegmentation faultが出た。計算途中にオーバーフローを起こすような処理(例えばmodを取る前の値がlong longのmaxを超えているとか)を行っているわけではないのでおそらくメモリ関連のエラーであると推測する。同様のサイズの配列をWindows環境でMinGW G++を用いてコンパイルして実行しても正常に通るのでおそらくLinux(Ubuntu on WSL...
+
+
+[12/14/2022 5:37 PM] mikiken#5554
+なんか`usleep.c`がないって言われてるっぽい?
+
+
+[12/14/2022 5:37 PM] mikiken#5554
+
+
+{Attachments}
+https://cdn.discordapp.com/attachments/1003859454191751178/1052504531142979605/message.txt
+
+
+[12/21/2022 12:39 AM] mikiken#5554
+スタックの16byte-alignmentが崩れている
+
+
+[12/21/2022 12:39 AM] mikiken#5554
+```
+.L.end.3:
+  lea rdi, [rbp-8844]
+  push rdi
+  lea rdi, [rbp-8844]
+  push rdi
+  pop rdi
+  mov eax, DWORD PTR [rdi]
+  push rax
+  push 1
+  pop rbx
+  pop rax
+  add eax, ebx
+  push rax
+  pop rax
+  pop rdi
+  mov DWORD PTR [rdi], eax
+  push rax
+  push 1
+  pop rbx
+  pop rax
+  sub eax, ebx
+  push rax
+  pop rax
+  lea rdi, [rbp-8840]
+  push rdi
+  lea rdi, [rbp-8836]
+  push rdi
+  lea rdi, [rbp-8804]
+  push rdi
+  pop rdi
+  mov eax, DWORD PTR [rdi]
+  push rax
+  push 2
+  pop rbx
+  pop rax
+  sub eax, ebx
+  push rax
+  push 200
+  pop rcx
+  pop rdx
+  pop rsi
+  pop rdi
+  mov al, 0
+  # stack_align % 16 = -8 // => 0
+  call a
+  push rax
+  jmp .L.begin.2
+.L.end.2:
+```
+
+
+[12/21/2022 12:41 AM] mikiken#5554
+最初におかしくなってるのが、`tmp.s`の1133行目で、これに対応するのは`donut.c`の50行目の
+```C
+ for (j = 0; j < 314; j++, a(&e, &w, s - 2, 200)) {
+```
+関数`a`を呼び出す部分だと考えられる
+
+
+[01/08/2023 11:13 PM] mikiken#5554
+**~1ヶ月経過😇~**
+`for(expr; expr; expr)`の`expr`の値がpushされたままになってたのが原因
+
+
+[01/11/2023 1:30 AM] mikiken#5554
+
+
+{Attachments}
+https://cdn.discordapp.com/attachments/1003859454191751178/1062407993406279771/f04e41a6-d9a3-4290-aed2-7004401a8058.png
+
+
+[01/11/2023 1:30 AM] mikiken#5554
+
+
+{Attachments}
+https://cdn.discordapp.com/attachments/1003859454191751178/1062408101124386816/9ca27d31-95de-4b22-8805-68eb5697cf8d.png
+
+
+[02/14/2023 6:38 PM] mikiken#5554
+**再び1ヶ月経過**
+
+
+[02/14/2023 6:38 PM] mikiken#5554
+https://twitter.com/mikikeen/status/1625040676474982400
+
+{Embed}
+mikiken (@mikikeen)
+https://twitter.com/mikikeen/status/1625040676474982400
+1ヶ月ぶりに自作コンパイラのコード見てるけど、何をしようとしてたか忘れた
+Twitter
+
+
+[02/14/2023 6:39 PM] mikiken#5554
+https://twitter.com/mikikeen/status/1625040952728645633
+
+{Embed}
+mikiken (@mikikeen)
+https://twitter.com/mikikeen/status/1625040952728645633
+ローカルな配列の初期化式を実装しようとしてたっぽい
+Twitter
+
+
+[02/14/2023 6:39 PM] mikiken#5554
+というわけでやっていき
+
+
+[02/14/2023 6:40 PM] mikiken#5554
+こんな感じのコードを追加し、
+```C
+Node *array_init(Function *func, Token *ident, Token *tok) {
+  Node head;
+  Node *cur = &head;
+  for (int offset = 0; !consume(tok, TK_RIGHT_BRACE); offset++) {
+    cur = cur->next = new_node(ND_STMT);
+    cur->body = new_node(ND_ASSIGN);
+    cur->body->lhs = new_binary_node(ND_DEREF, new_binary_node(ND_ADD, var_node(func, ident), new_num_node(offset)), NULL);
+    cur->body->rhs = assign(func, tok);
+    if (consume(tok, TK_RIGHT_BRACE))
+      return head.next;
+    expect(tok, TK_COMMA);
+  }
+  return head.next;
+}
+```
+
+
+[02/14/2023 6:40 PM] mikiken#5554
+こういうコードが通るようになった
+```C
+int array_test13() {
+  int a[5] = {1, 2, 3, 4, 5};
+  int sum = 0;
+  for (int i = 0; i < 5; i++)
+    sum += a[i];
+  return sum;
+}
+```
+
+
+[02/14/2023 6:40 PM] mikiken#5554
+ケツカンマがあっても通る実装になってる
+
+
+[02/14/2023 6:41 PM] mikiken#5554
+あと実装しないといけない仕様としては、
+
+
+[02/14/2023 6:41 PM] mikiken#5554
+配列の長さを明示的に書かずに初期化するやつ
+```C
+int arr[] = {1,2,3};
+```
+
+
+[02/14/2023 6:43 PM] mikiken#5554
+あとは初期化式が一部しか与えられてない場合に、残りの要素を0埋めするやつとか
+```C
+int x[5] = {1, 2, 3}; // これは下と等価
+int x[5] = {1, 2, 3, 0, 0};
+```
+
+
+[02/14/2023 6:45 PM] mikiken#5554
+そもそも、ただ配列を宣言しただけのときって、初期化されたっけ?
+```C
+int arr[3]; // これの初期値どうなってる?
+```
+
+
+[02/14/2023 6:48 PM] mikiken#5554
+あとは、定義したデカさ以上の要素を参照しようとしたときに警告出すとか
+(gccで試したらwarningになったので、未定義動作っぽい?)←確認が必要
+
+
+[02/15/2023 2:21 PM] mikiken#5554
+ポインタの配列のテストケース入れてないな、そういえば
+
+
+[02/15/2023 3:06 PM] mikiken#5554
+とりあえず配列の長さを明示的に書かないやつを実装していく
+
+
+[02/15/2023 5:59 PM] mikiken#5554
+適当にコード足したら、変数のオフセットの処理書き忘れたっぽくて、出力したアセンブリがセグフォする
+
+
+[02/15/2023 9:54 PM] mikiken#5554
+テストでコケても、他のテストケースも流せるようにしたいかも
+
+
+[02/15/2023 11:34 PM] mikiken#5554
+~~ND_LVARっていうNodekind、実質使ってないから抹消したさあるな~~
+(追記) `int a[3];`みたいな感じで宣言のみを行う場合、木構造の葉にあたるnodeがなくなってしまうので、あった方が便利
+
+
+[02/16/2023 5:12 PM] mikiken#5554
+本来出力されるべきアセンブリと現状出力されているものとの差分
+
+
+[02/16/2023 5:12 PM] mikiken#5554
+
+
+{Attachments}
+https://cdn.discordapp.com/attachments/1003859454191751178/1075691133444825109/message.txt
+
+
+[02/17/2023 9:19 PM] mikiken#5554
+配列の長さを省略する記法をサポート
+https://github.com/mikiken/9cc/commit/7335f8135ffd28916d86c738c526180645331b50
+
+{Embed}
+https://github.com/mikiken/9cc/commit/7335f8135ffd28916d86c738c526180645331b50
+Allow to omit array length if an initializer is given · mikiken/9cc...
+https://images-ext-1.discordapp.net/external/0ZGkO16pJj21_oG5LBYbRe-Ot86qBHttua0xfgXwqhA/https/opengraph.githubassets.com/34191cdb8ca6ec6bf682f87ab36f5f98d22718cf75ce344ad7c789fdd3d8f28f/mikiken/9cc/commit/7335f8135ffd28916d86c738c526180645331b50
+
+
+[02/17/2023 9:20 PM] mikiken#5554
+あと初期化の要素が配列の長さより短い場合に、残りの要素に0を代入するやつを実装した
+https://github.com/mikiken/9cc/commit/e45a6b45485e02bdcf6d5855b96f2641cfb337c3
+
+{Embed}
+https://github.com/mikiken/9cc/commit/e45a6b45485e02bdcf6d5855b96f2641cfb337c3
+Assign 0 to the array elements · mikiken/9cc@e45a6b4
+if not all elements are given at initalizer
+https://images-ext-2.discordapp.net/external/sx2G_DRAumcWnXEOezWZEWtqIsZgoc8izFb3KxcRRDA/https/opengraph.githubassets.com/95b1d0206585e34118ba7c7a919774e26461f559a3e908640495553dcbe4d69d/mikiken/9cc/commit/e45a6b45485e02bdcf6d5855b96f2641cfb337c3
+
+
+[02/17/2023 9:21 PM] mikiken#5554
+https://twitter.com/mikikeen/status/1626471284287897600
+
+{Embed}
+mikiken (@mikikeen)
+https://twitter.com/mikikeen/status/1626471284287897600
+char str[] = "hoge"; みたいな構文を実装しようとしたが、文字リテラルをまだ実装していなかった
+(文字列リテラルはある)
+Twitter
+
+
+[02/17/2023 9:21 PM] mikiken#5554
+というわけで、文字リテラルを実装していく
+
+
+[02/17/2023 9:22 PM] mikiken#5554
+大体できたけど、エスケープシーケンスが2文字と解釈されてエラーでる(それはそう)
+
+
+[02/17/2023 9:23 PM] mikiken#5554
+こんな感じのコードを追加し、tok->valの値とすることで、ひとまず動くようにはなった
+```C
+char read_escape_char(char *p) {
+  switch (*p) {
+    case 'a':
+      return 7;
+    case 'b':
+      return 8;
+    case 't':
+      return 9;
+    case 'n':
+      return 10;
+    case 'v':
+      return 11;
+    case 'f':
+      return 12;
+    case 'r':
+      return 13;
+    case 'e':
+      return 27;
+    case '"':
+      return 34;
+    case '\'':
+      return 39;
+    case '\\':
+      return 92;
+    default:
+      return *p;
+  }
+}
+```
+
+
+[02/17/2023 9:24 PM] mikiken#5554
+文字列リテラルでも似たようなコードを書いてしまってるのをどうにかしたい
+
+
+[02/17/2023 9:33 PM] mikiken#5554
+実は文字列リテラル実装するとき、Compiler Explorerの出力を見ようみまねで真似ただけで、いまいち仕組みが分かっていない😇
+
+
+[02/21/2023 3:56 PM] mikiken#5554
+えーとchibiccでは、文字列リテラルはdataセクションに`char`の配列として記録されているっぽい
+
+
+[02/21/2023 4:29 PM] mikiken#5554
+一方、自分のやつの場合、`.string`という記法を使って~~お茶を濁して~~いる
+
+
+[02/21/2023 4:34 PM] mikiken#5554
+このディレクティブあたりの話は、以下のURL見ると良さそう
+http://www.swlab.cs.okayama-u.ac.jp/~nom/lect/p3/what-is-directive.html
+https://suu-g.hateblo.jp/entry/20080510/1210408956
+
+{Embed}
+suu-g
+https://suu-g.hateblo.jp/entry/20080510/1210408956
+gasのディレクティブについて - suu-g's diary
+アセンブリコードをアセンブルすると機械語になる。こういう説明が世の中じゃされてるけど、でもそれは半分ウソ。アセンブリコードの中でも機械語に直接対応しないものがある。それがディレクティブと呼ばれているもので、ドットから始まる命令がこれにあたる。 疑似命令 (psuedo-ops) とも呼ばれるこのアセンブラディレクティブは、機械語への直接の対応ではなくて、アセンブラ（GNU as）に対する命令。 前回の記事で説明したのはセクションについてだけだったけれども、ディレクティブにはもっといろいろな意味がある。 以下、その具体的な例を挙げていくよ。 文字列を配置する [.ascii .asciz .st…
+https://images-ext-2.discordapp.net/external/N8qYrXlufnSaPq0OkN1_xiaq-3oRO0LFWVc_2GER8aM/https/ogimage.blog.st-hatena.com/12704538227038519244/10328749687242444203/1493731778
+
+
+[02/21/2023 4:53 PM] mikiken#5554
+現在の`find_string_literal_end()`の実装
+```C
+char *find_string_literal_end(char *start) {
+  char *p;
+  for (p = start; *p != '\"'; p++) {
+    if (*p == '\0' || *p == '\n')
+      error_at(start, "文字列リテラルが閉じていません");
+    if (*p == '\\')
+      p++;
+  }
+  return p;
+}
+
+```
+
+
+[02/21/2023 4:58 PM] mikiken#5554
+ちょっと実験
+```C
+int main() {
+    char c = '"'; // => Program returned: 34
+    return c;
+}
+```
+
+
+[02/21/2023 4:58 PM] mikiken#5554
+```C
+int main() {
+    char c = '\"'; // => Program returned: 34
+    return c;
+}
+```
+
+
+[02/21/2023 5:00 PM] mikiken#5554
+```C
+int main() {
+    // char c = '\'; // => コンパイルエラー (2個目のシングルクオートがエスケープされている)
+    char c = '\\'; // => Program returned: 92
+    return c;
+}
+```
+
+
+[02/22/2023 10:33 PM] mikiken#5554
+
+
+{Attachments}
+https://cdn.discordapp.com/attachments/1003859454191751178/1077946228060467341/Java-for.png
+
+
+[02/22/2023 10:34 PM] mikiken#5554
+`find_string_literal_end()`関数は、**for文の更新式は条件判定の前に評価される**ことを上手く利用している
+
+
+[02/23/2023 9:47 PM] mikiken#5554
+文字列リテラルの実装をとりあえずこうしてみた
+```C
+    // 文字列リテラルの場合
+    if (startswith(p, "\"")) {
+      char *start = ++p; // ダブルクオートを読み飛ばす
+      char *end = find_string_literal_end(p);
+      char *buf = calloc(end - start, sizeof(char));
+      int len = 0;
+#if 1
+      while (p < end) {
+  #if 0
+        // エスケープシーケンスの場合
+        if (*p == '\\') {
+          buf[len++] = '\\';
+          buf[len++] = str_literal_escape_char(p + 1);
+          p += 2;
+        }
+        else {
+          buf[len++] = *p++;
+        }
+  #else
+        buf[len++] = *p++;
+  #endif
+      }
+#else
+      memcpy(buf, start, end - start - 1);
+#endif
+      cur = new_token(TK_STR, cur, buf, buf + len - 1);
+      p++; // ダブルクオートを読み飛ばす
+      continue;
+    }
+```
+
+
+[02/23/2023 9:49 PM] mikiken#5554
+`\a`とか`\e`が動かないのは、`.string`ディレクティブがこれらのエスケープシーケンスに対応していないっぽい
+
+
+[02/23/2023 9:50 PM] mikiken#5554
+http://web.mit.edu/gnu/doc/html/as_7.html#SEC120
+> **.string "str"**
+> Copy the characters in str to the object file. You may specify more than one string to copy, separated by commas. Unless otherwise specified for a particular machine, the assembler marks the end of each string with a 0 byte. You can use any of the escape sequences described in section __Strings__.
+
+
+[02/23/2023 9:51 PM] mikiken#5554
+Stringsのsectionを見てみると、
+
+
+[02/23/2023 9:55 PM] mikiken#5554
+> **Strings**
+> A string is written between double-quotes. It may contain double-quotes or null characters. The way to get special characters into a string is to escape these characters: precede them with a backslash `\` character. For example `\\` represents one backslash: the first `\` is an escape which tells *as* to interpret the second character literally as a backslash (which prevents *as* from recognizing the second `\` as an escape character). The complete list of escapes follows.
+
+
+[02/23/2023 9:55 PM] mikiken#5554
+> `\b`
+> Mnemonic for backspace; for ASCII this is octal code 010.
+> `\f`
+> Mnemonic for FormFeed; for ASCII this is octal code 014.
+> `\n`
+> Mnemonic for newline; for ASCII this is octal code 012.
+> `\r`
+> Mnemonic for carriage-Return; for ASCII this is octal code 015.
+> `\t`
+> Mnemonic for horizontal Tab; for ASCII this is octal code 011.
+> `\ digit digit digit`
+> An octal character code. The numeric code is 3 octal digits. For compatibility with other Unix systems, 8 and 9 are accepted as digits: for example, `\008` has the value 010, and `\009` the value 011.
+> `\x hex-digit hex-digit`
+> A hex character code. The numeric code is 2 hexadecimal digits. Either upper or lower case x works.
+> `\\`
+> Represents one `\` character.
+> `\"`
+> Represents one `"` character. Needed in strings to represent this character, because an unescaped `"` would end the string.
+> `\ anything-else`
+> Any other character when escaped by `\` gives a warning, but assembles as if the `\` was not present. The idea is that if you used an escape sequence you clearly didn't want the literal interpretation of the following character. However *as* has no other interpretation, so *as* knows it is giving you the wrong code and warns you of the fact.
+> Which characters are escapable, and what those escapes represent, varies widely among assemblers. The current set is what we think the BSD 4.2 assembler recognizes, and is a subset of what most C compilers recognize. If you are in doubt, do not use an escape sequence.
+
+
+[02/23/2023 11:37 PM] mikiken#5554
+gccは上記に記載されていないエスケープシーケンスの場合(例えば`\a`)、`\007`のように8進コードポイントを使って表現している
+
+
+[02/24/2023 2:28 PM] mikiken#5554
+https://note.com/ruiu/n/ncacaa6cf8d8f
+
+{Embed}
+https://note.com/ruiu/n/ncacaa6cf8d8f
+コンパイラに仕込まれた細工とシステムのセキュリティの話｜Rui Ueyama｜note
+コンパイラのソースには書いていないのにバイナリだけで代々伝わっていく情報というのがあって、それはコンピュータのセキュリティに大きく関わっている。ここではそれについて書いてみよう。  僕は8ccというCコンパイラをスクラッチから書いたことがあるのだけど、8ccには文字列を読む部分で、"\"の後に"n"がきたら"\n"という文字（改行文字）を読んだことにするという箇所がある。これはよく考えてみれば自己言及的になっていて、ソースコードの中に、コンパイラが実際に必要とする改行文字のASCIIコードの情報が含まれていない。しかしコンパイラをコンパイルするコンパイラからその情報が受け継がれるので、
+https://images-ext-2.discordapp.net/external/NK6FFNgakmxwTYHxBOO9a2RmHEtJ3EfNQPEmh9cqMaY/%3Ffit%3Dbounds%26format%3Djpeg%26quality%3D85%26width%3D330/https/assets.st-note.com/production/uploads/images/903591/profile_3cbfe950fdd5a01d7eb0be427dc798a5.jpg
+
+
+[02/24/2023 2:36 PM] mikiken#5554
+そういえば、`gen_data_section()`のコードを書き換えてたときに、`printf`とか`putchar`の出力がすぐには表示されなかったが、これは一旦出力がストリームにバッファリングされるのが原因
+(必要な場合は`fflush`関数を用いることで、即座にバッファを吐き出すことができる)
+
+
+[02/24/2023 4:18 PM] mikiken#5554
+とりあえず、文字列リテラル内のエスケープシーケンスがちゃんと出力されるようになった
+https://github.com/mikiken/9cc/commit/613ade31af9bbad8bfef1d13cbc9dc0ae5f57593
+
+{Embed}
+https://github.com/mikiken/9cc/commit/613ade31af9bbad8bfef1d13cbc9dc0ae5f57593
+Fix the code for putting escape sequences in `.string` directive · ...
+https://images-ext-2.discordapp.net/external/CcUqLKPOeqrjzPatmGlB4wsNFjNhyuYTlp0B1CML45Q/https/opengraph.githubassets.com/fc83e972b7bed95451c7f825871af6dc81e97c9eab34860f1f08728bfb9ce538/mikiken/9cc/commit/613ade31af9bbad8bfef1d13cbc9dc0ae5f57593
+
+
+[02/24/2023 4:20 PM] mikiken#5554
+かなり横道に逸れたけど、なにをしていたかというと、
+```C
+char str[] = "hoge";
+```
+みたいな構文を書けるようにしようとしていたはず
+
+
+[02/24/2023 4:23 PM] mikiken#5554
+```C
+char *str = "hoge";
+```
+とは違って、上記の構文はちゃんとスタック領域に確保されたcharの配列として扱わないとだめ
+
+
+[02/26/2023 4:11 PM] mikiken#5554
+実装した
+https://github.com/mikiken/9cc/commit/724a72c7e3d6c6f2f3718832c421713ddacc0973
+
+{Embed}
+https://github.com/mikiken/9cc/commit/724a72c7e3d6c6f2f3718832c421713ddacc0973
+Implement initialization expressions for string literals · mikiken/...
+https://images-ext-2.discordapp.net/external/RTIEk3phFR_Z2RRII_FN1xw9uUxNOgzElL15wFJBvww/https/opengraph.githubassets.com/adafd5b427d1b5cfbcee4ef39f7728d20e1909621d73265306de58b2f1a09ce3/mikiken/9cc/commit/724a72c7e3d6c6f2f3718832c421713ddacc0973
+
+
+[02/26/2023 4:27 PM] mikiken#5554
+~~続いてグローバル変数の初期化式を実装していく~~
+**(追記)一旦保留**
+
+
+[02/26/2023 10:36 PM] mikiken#5554
+とりあえず文字列リテラルの初期化式は後回しにして、ただのグローバル変数の初期化式とグローバルの配列の初期化式を実装していく
+
+
+[03/02/2023 7:15 PM] mikiken#5554
+ローカル変数の初期化式は、単に宣言の式と代入の式に分解してパースすれば良いだけだったけど、グローバル変数の場合はそうはいかない
+
+
+[03/03/2023 11:47 AM] mikiken#5554
+例えば、トップレベルに
+```C
+int x = 3;
+```
+と書いた場合、
+```wasm
+x:
+        .long   3
+```
+とコンパイルしないといけない
+
+
+[03/03/2023 12:26 PM] mikiken#5554
+現状、
+`codegen.c`
+```C
+void gen_data_secton(Obj *gvar_list) {
+  printf(".data\n");
+  for (Obj *obj = gvar_list; obj->next != NULL; obj = obj->next) {
+    // 文字列リテラルの場合
+    if (obj->init_data)
+      print_string_literal(obj->str_id, obj->init_data);
+    // グローバル変数の場合
+    else {
+      printf("%s:\n", obj->name);
+      printf("  .zero %d\n", calc_gvar_size(obj->type));
+    }
+  }
+  printf("\n");
+}
+```
+となっているので、
+
+
+[03/03/2023 12:29 PM] mikiken#5554
+`Obj`に`init_expr`みたいなメンバを追加するのが良さそう
+```C
+typedef struct Obj Obj;
+
+struct Obj {
+  Obj *next;  // 次のオブジェクトまたはNULL
+  Type *type; // 型
+  int len;    // 識別子または文字列リテラルの文字数
+
+  // 変数
+  char *name; // 変数の名前
+  int offset; // RBPからのオフセット(ローカル変数のときのみ使用)
+
+  // 文字列リテラル
+  char *init_data;
+  int str_id;
+};
+```
+
+
+[03/03/2023 11:10 PM] mikiken#5554
+と思ったけど、めんどくさそうなので、グローバル変数の初期化式は、一旦後回しにしようかな
+
+
+[03/03/2023 11:11 PM] mikiken#5554
+例えば、
+```C
+int x = 3 + 2 * 4;
+```
+みたいな式もトップレベルに書けるはずだが、これをコンパイルしようとすると、静的解析の時点で値を計算しておかないといけない気がする(?)
+
+
+[03/03/2023 11:12 PM] mikiken#5554
+とりあえず、単に定数を代入する場合のみ書けるようにしてもいいけど、そもそも今の実装でグローバル変数を0以外で初期化してるところってそんなにないと思うから、とりあえず後に回そうという判断
+
+
+[03/03/2023 11:15 PM] mikiken#5554
+現時点での`parse.c`を保存しておく
+
+
+[03/03/2023 11:15 PM] mikiken#5554
+
+
+{Attachments}
+https://cdn.discordapp.com/attachments/1003859454191751178/1081218367576358993/parse.c
+
+
+[03/03/2023 11:16 PM] mikiken#5554
+ということで、次に実装したいと思ってた多次元配列を実装していく
+
+
+[03/04/2023 1:36 AM] mikiken#5554
+https://hsjoihs.hatenablog.com/entry/2018/12/17/235557#f-f5c5ed98
+
+{Embed}
+hsjoihs
+https://hsjoihs.hatenablog.com/entry/2018/12/17/235557
+C(のサブセット)コンパイラを書く上でハマった点：配列編 - hsjoihs’s diary
+初めに 「配列編」と銘打っていますが、続編が投稿される保証はありません。 そうそう この記事は言語実装 Advent Calendar 2018とC言語 Advent Calendar 2018の17日目の記事です。 想定している読者層 （どういう読者層を想定しているんだろう、書いていて自分でもよく分からなくなった）（Cコンパイラ書いていて「配列の配列（いわゆる二次元配列）がなんかバグるなぁ」となった人のための記事かもなぁ）（というか、多分バグらせていた当時の自分への手紙） 本題に入ろう Cコンパイラを書く上で微妙にハマった、配列へのポインタの話、それに付随して構造体を実装する際の話について軽…
+https://images-ext-2.discordapp.net/external/Iju3bue1DzyfaNefAfRRxt1Oi9lsFear8sWvDR0Ala4/https/ogimage.blog.st-hatena.com/10257846132626756034/10257846132686209724/1545058557
+
+
+[03/04/2023 1:46 AM] mikiken#5554
+たぶん**配列全体へのポインタ**さえ実装できれば、割とすぐに実装できそう
+
+
+[03/05/2023 12:36 AM] mikiken#5554
+`int arr[3][5];`という宣言に対して、`arr[2][4]`は`*(*(arr+2)+4)`としてパースすればOK
+
+
+[03/06/2023 12:51 PM] mikiken#5554
+`parse_type()`と`declaration()`で型のパースを(実質)2回やってるの、設計悪そう
+
+
+[03/06/2023 12:51 PM] mikiken#5554
+識別子だけ保存しといて、`parse_type()`でトークンを読み進めておけばよさそう?
+
+
+[03/06/2023 4:22 PM] mikiken#5554
+とりあえず、`parse_type()`を`parse_base_type()`と`parse_variable_type()`に分割し、各関数の中でトークンを読み進めるようにした
+
+
+[03/06/2023 4:23 PM] mikiken#5554
+`declaration()`の中がまだ直せてないので、直す
+
+
+[03/06/2023 10:06 PM] mikiken#5554
+一旦メモ
+```C
+  // 配列の場合
+  if (dec_type->kind == TYPE_ARRAY) {
+    while (dec_type->ptr_to) {
+      // 配列の要素数が明示されている場合
+      if (dec_type->array_size) {
+        Node *node = new_lvar_definition(func, dec_type, ident);
+        skip_token(tok, 4);
+        // 初期化式がある場合
+        if (consume(tok, TK_ASSIGN)) {
+          // 文字列リテラルの初期化式の場合
+          if (consume_nostep(tok, TK_STR)) {
+            node = init_str_literal_array(func, dec_type, tok, var_node(func, ident));
+            next_token(tok);
+          }
+          else {
+            expect(tok, TK_LEFT_BRACE);
+            node = array_init(func, dec_type, tok, var_node(func, ident));
+          }
+        }
+        return node;
+      }
+      // 配列の要素数が明示されていない場合
+      else {
+        skip_token(tok, 3);
+        expect(tok, TK_ASSIGN); // 配列の要素数が明示されていない場合、初期化式が続くはず
+        Node *node;
+        Node *array_node = new_node(ND_LVAR);
+        // 文字列リテラルの初期化式の場合
+        if (consume_nostep(tok, TK_STR)) {
+          node = init_str_literal_array(func, dec_type, tok, array_node);
+          next_token(tok);
+        }
+        else {
+          expect(tok, TK_LEFT_BRACE);
+          node = array_init(func, dec_type, tok, array_node);
+        }
+        (void)new_lvar_definition(func, dec_type, ident);
+        *array_node = *var_node(func, ident);
+        return node;
+      }
+    }
+  }
+```
+
+
+[03/06/2023 10:14 PM] mikiken#5554
+初期化式が存在するときに配列宣言の要素数を省略できる記法は、難しそうなので、一旦消してから後で復活させるか
+
+
+[03/07/2023 1:08 AM] mikiken#5554
+`semantic_analysis.c`で、
+> 不正な加算を行うことはできません
+というエラーが出たので、原因を調べる
+
+
+[03/07/2023 1:09 AM] mikiken#5554
+ここで、配列全体へのポインタを実装する必要が出てくるのだと思われる
+
+
+[03/07/2023 11:12 PM] mikiken#5554
+
+
+{Attachments}
+https://cdn.discordapp.com/attachments/1003859454191751178/1082667033063325847/P_20230307_231121.jpg
+
+
+[03/07/2023 11:15 PM] mikiken#5554
+**`int arr[2][3]`が`int [3]`の要素数2の配列型である**ことに注意する必要がある
+(直感に反する)
+
+
+[03/07/2023 11:27 PM] mikiken#5554
+多次元配列のパースの仕方をミスってたので、直す
+順方向に伸びるLinked Listとして実装すればOKなはず
+
+
+[03/07/2023 11:48 PM] mikiken#5554
+直せた
+
+
+[03/08/2023 12:59 AM] mikiken#5554
+今までは、一次元配列であることを(暗黙に)仮定してたので、
+```C
+    case ND_ADD: {
+      Node *lhs = add_type_to_node(lvar_list, node->lhs);
+      Node *rhs = add_type_to_node(lvar_list, node->rhs);
+      // 左辺が配列の場合、ポインタにキャストする
+      if (is_array_type_node(lhs))
+        lhs = cast_array_to_pointer(lhs);
+      // 右辺が配列の場合、ポインタにキャストする
+      if (is_array_type_node(rhs))
+        rhs = cast_array_to_pointer(rhs);
+      // ポインタ同士の加算は禁止されているのでエラーにする
+      if (lhs->type->kind == TYPE_PTR && rhs->type->kind == TYPE_PTR)
+        error("ポインタ同士を加算することはできません");
+      // 左辺がint型、右辺がポインタの場合は両辺を入れ替える
+      if (lhs->type->kind == TYPE_INT && rhs->type->kind == TYPE_PTR) {
+        Node *original_lhs = lhs;
+        lhs = rhs;
+        rhs = original_lhs;
+      }
+      // 左辺がポインタ型、右辺がint型の場合
+      if (lhs->type->kind == TYPE_PTR && rhs->type->kind == TYPE_INT) {
+        Node *size = new_size_node(lhs->type->ptr_to->kind);
+        Node *mul_scaling = new_typed_binary(new_typed_node(new_type(TYPE_INT), new_node(ND_MUL)), size, rhs);
+        return new_typed_binary(new_typed_node(lhs->type, node), lhs, mul_scaling);
+      }
+      // 両辺が算術型の場合
+      else if (is_arithmeric_type(lhs->type->kind) && is_arithmeric_type(rhs->type->kind)) {
+        fix_rhs_type(lhs, rhs);
+        return new_typed_binary(new_typed_node(new_type(TYPE_INT), node), lhs, rhs);
+      }
+      else {
+        error("不正な加算を行うことはできません");
+      }
+    }
+```
+
+
+[03/08/2023 1:00 AM] mikiken#5554
+の中で、
+```C
+      // 左辺がポインタ型、右辺がint型の場合
+      if (lhs->type->kind == TYPE_PTR && rhs->type->kind == TYPE_INT) {
+        Node *size = new_size_node(lhs->type->ptr_to->kind);
+        Node *mul_scaling = new_typed_binary(new_typed_node(new_type(TYPE_INT), new_node(ND_MUL)), size, rhs);
+        return new_typed_binary(new_typed_node(lhs->type, node), lhs, mul_scaling);
+      }
+```
+のようにキャストすることで、上手くいっていた
+
+
+[03/08/2023 1:01 AM] mikiken#5554
+しかし、多次元配列の場合は、`lhs->type->ptr_to`に`int`のような基本型が来るとは限らない
+実際、二次元配列の場合は、`lhs->type->ptr_to`に`TYPE_ARRAY`が来ている
+
+
+[03/08/2023 1:03 AM] mikiken#5554
+`add_type_to_node`を再帰的に呼び出す際に、型情報も、1段深いものを渡す必要がある(?)
+
+
+[03/08/2023 1:08 AM] mikiken#5554
+話が戻るけど、グローバル変数の初期化式、定数をベタ書きする記法だけサポートしておくのはありかもしれない
+
+
+[03/08/2023 11:37 AM] mikiken#5554
+やっていき
+
+
+[03/08/2023 11:40 AM] mikiken#5554
+`int arr[2][3]`という宣言があったとして、
+> 1回目の間接参照では、`ND_DEREF`の型は`int [3]`であるべきであり、
+> 2回目の間接参照では、`ND_DEREF`の型は`int`であるべきである
+ってことになるはず
+
+
+[03/08/2023 6:18 PM] mikiken#5554
+https://natsutan.hatenablog.com/entry/2022/11/10/100813
+
+{Embed}
+natsutan
+https://natsutan.hatenablog.com/entry/2022/11/10/100813
+低レイヤを知りたい人のためのCコンパイラ作成入門の多次元配列 - ぱたへね
+低レイヤを知りたい人のためのCコンパイラ作成入門を、Rustでコツコツとやっている。 www.sigbus.info 今まで苦労しながらもgithubのソースを見ながらまっすぐに来れたが、二次元配列の所で躓いたので整理してみた。 動かしたいソース まだここまでは動かないけど、やりたいことはこのCソースの演算部分を動かす事。二次元配列の宣言と、ポインターへの変換、デリファレンス。 流石にCの動きが分からないと言うことはないが、ちゃんと動くアセンブラを自力で出力するのには難しい。 #include  int main() { int x [2][3]; int *y = x; i…
+https://images-ext-2.discordapp.net/external/CP7WmgjWy-Evcz1cAMmsnE4JQBByod4Iwdi3NWaRkyA/https/cdn-ak.f.st-hatena.com/images/fotolife/n/natsutan/20221110/20221110002823.png
+
+
+[03/08/2023 6:28 PM] mikiken#5554
+`int x[2][3];`という宣言に対して、`int (*x_ptr)[3] = &x[2]`みたいなコードも動かないといけないはず(要検証)
+
+
+[03/08/2023 6:37 PM] mikiken#5554
+とりあえず、`add_type_to_node`の`ND_DEREF`で`lhs`の型を見て、その型が配列型である場合は、`ptr_to`に入っている型情報を与えた上で、`add_type_to_node`を再度呼び出せばOKそう?
+
+
+[03/11/2023 9:39 AM] mikiken#5554
+**数日経過**
+
+
+[03/11/2023 9:40 AM] mikiken#5554
+そもそも、`add_type_to_node`がデカすぎる説はあるな
+
+
+[03/11/2023 9:43 AM] mikiken#5554
+この関数は、ただ機械的に型をつけるだけにして、その上で、後から型を修正したり、ポインタ演算用にnodeを追加した方が見通し良さそう
+
+
+[03/11/2023 10:10 AM] mikiken#5554
+```C
+// ND_DEREFで間接参照を行った場合、そのnodeの以下の型はnode->type->ptr_toとなるので、型を付け直す
+Node *fix_node_type_to_ptr_to(Node *node, Type *node_type) {
+  switch (node->kind) {
+    case ND_DEREF:
+      node->type = node_type->ptr_to;
+      return node;
+    default:
+      return node;
+  }
+}
+```
+
+
+[03/12/2023 1:00 AM] mikiken#5554
+テンプレを書いた
+```C
+Node *add_type_to_node(Node *node) {
+  switch (node->kind) {
+    case ND_STMT:
+      return;
+    case ND_EXPR:
+      return;
+    case ND_COMMA:
+      return;
+    case ND_ADD:
+      return;
+    case ND_SUB:
+      return;
+    case ND_MUL:
+      return;
+    case ND_DIV:
+      return;
+    case ND_MOD:
+      return;
+    case ND_EQ:
+      return;
+    case ND_NE:
+      return;
+    case ND_LT:
+      return;
+    case ND_LE:
+      return;
+    case ND_NOT:
+      return;
+    case ND_AND:
+      return;
+    case ND_OR:
+      return;
+    case ND_COND:
+      return;
+    case ND_ASSIGN:
+      return;
+    case ND_NUM:
+      return;
+    case ND_STR:
+      return;
+    case ND_LVARDEF:
+      return;
+    case ND_LVAR:
+      return;
+    case ND_GVAR:
+      return;
+    case ND_RETURN:
+      return;
+    case ND_IF:
+      return;
+    case ND_FOR:
+      return;
+    case ND_FUNCALL:
+      return;
+    case ND_ADDR:
+      return;
+    case ND_DEREF:
+      return;
+    case ND_SIZEOF:
+      return;
+  }
+}
+```
+
+
+[03/12/2023 9:46 PM] mikiken#5554
+(作り直し中の)`add_type_to_node`に`ND_GVAR`があるが、これはあくまで関数のスコープの中でグローバル変数を読んだ場合であって、トップレベルにグローバル変数に宣言を書いた場合ではない
+
+
+[03/12/2023 9:46 PM] mikiken#5554
+(そもそもグローバル変数の初期化式を実装していない以上、それはそう)
+
+
+[03/17/2023 4:37 PM] mikiken#5554
+**さらに数日経過**
+
+
+[03/17/2023 4:38 PM] mikiken#5554
+とりあえず、`add_type_to_node`では機械的に型を付けるだけにした
+
+
+[03/17/2023 4:39 PM] mikiken#5554
+配列をその先頭要素へのポインタにキャストする処理や、ポインタの加算減算で、オフセットを`sizeof(lhs->type->ptr_to)`倍する処理は、別の関数で行うことにした
+
+
+[03/17/2023 4:41 PM] mikiken#5554
+なんか、改めて意味解析の処理を見返すと、型の扱い方合ってる?って思う箇所があるけど、とりあえず気にせずに分割していく
+
+
+[03/22/2023 4:45 PM] mikiken#5554
+とりあえず関数を分割したが、`semantic_analysis() : 代入式の両辺の型が異なります`が出るな
+
+
+[03/22/2023 4:47 PM] mikiken#5554
+どこでエラーが出てるかというと、`test/array.c`の`array_test1`の代入式`*p=1`の部分
+
+
+[03/22/2023 4:49 PM] mikiken#5554
+```C
+int array_test1() {
+  int a[2];
+  int *p;
+  p = a;
+  *p = 1;
+  *(p + 1) = 2;
+  return *p + *(p + 1);
+}
+```
+
+
+[03/22/2023 4:51 PM] mikiken#5554
+`ND_DEREF`自体の型は、`lhs->type->ptr_to`にしないといけないのに、そうなってなかったので修正した
+
+
+[03/22/2023 5:23 PM] mikiken#5554
+それはそうとして、大量の`Segmentation fault`と`semantic_analysis() : 代入式の両辺の型が異なります`が出ているのが気になる
+
+
+[03/22/2023 5:24 PM] mikiken#5554
+`arith.c`ですらセグフォしてるので原因を調査する
+
+
+[03/22/2023 5:29 PM] mikiken#5554
+`codegen.c`で関数呼び出しの引数の型を参照しようとしたところ、`ND_FUNCALL`の`body->type`に型情報が入っておらずエラーになっているらしい
+
+
+[03/22/2023 5:32 PM] mikiken#5554
+`semantic_analysis()`を確認したところ、普通に`case ND_FUNCALL:`の実装忘れてたわ😇
+
+
+[03/22/2023 5:52 PM] mikiken#5554
+実装した
+
+
+[03/22/2023 6:06 PM] mikiken#5554
+`arith.c`を9ccでコンパイルすると、`  assert(21, 5 + 20 - 4, "5 + 20 - 4");`のテストケースでコケてる
+
+
+[03/22/2023 6:07 PM] mikiken#5554
+そもそも`ND_NUM`に型情報が入っていないっぽい
+
+
+[03/23/2023 10:42 PM] mikiken#5554
+`add_type_to_node`と`semantic_analysis`で、for文で`arg->body`に対して処理を行うべきところが`arg`に対して処理を行ってたのが原因
+
+
+[03/23/2023 10:43 PM] mikiken#5554
+これで、`arith.c`のコンパイルは通るようになった
+
+
+[03/23/2023 10:43 PM] mikiken#5554
+次に、`array.c`のコンパイルを試みると、やはりセグフォ
+
+
+[03/23/2023 10:47 PM] mikiken#5554
+やはり同じところでセグフォしてるな
+https://discord.com/channels/1002995356033896448/1003859454191751178/1088006142648660018
+
+
+[03/23/2023 10:49 PM] mikiken#5554
+とりあえず、代入式に型情報が入っていないことが分かる
+
+
+[03/23/2023 10:53 PM] mikiken#5554
+確かに`semantic_analysis()`の`ND_ASSIGN`のところを見ると、node自体の型を指定し忘れてるな
+
+
+[03/24/2023 12:00 PM] mikiken#5554
+左辺の型に合わせるようにした
+
+
+[03/24/2023 12:25 PM] mikiken#5554
+なんか`codegen.c`でメモリ上の値をレジスタにセットしようとしたときに配列型が登場してエラーになってる
+
+
+[03/24/2023 12:25 PM] mikiken#5554
+どのテストケースでコケてるんだろ
+
+
+[03/24/2023 3:38 PM] mikiken#5554
+構文木はこんな感じ
+
+
+[03/24/2023 3:38 PM] mikiken#5554
+
+
+{Attachments}
+https://cdn.discordapp.com/attachments/1003859454191751178/1088713367486734367/P_20230324_153750.jpg
+
+
+[03/24/2023 4:03 PM] mikiken#5554
+~~該当するテストケース無くね?~~
+(追記) callstackを確認したら`array_test13()`でコケてることが判明
+
+
+[03/24/2023 4:06 PM] mikiken#5554
+`parse.c`は特に触ってないから、意味解析のところで構文木を構築するのをミスってそう
+
+
+[03/26/2023 4:12 PM] mikiken#5554
+現時点で
+```
+arith.c
+array.c
+control_statement.c
+function.c
+string.c
+test.c
+variable.c
+```
+はコンパイル可能
+
+
+[03/26/2023 4:12 PM] mikiken#5554
+一方で、`pointer.c`はコンパイルエラーになる
+
+
+[03/26/2023 4:38 PM] mikiken#5554
+VSCodeのgdb拡張(?)、めっちゃ便利
+
+{Attachments}
+https://cdn.discordapp.com/attachments/1003859454191751178/1089453250484371526/image.png
+
+
+[03/26/2023 4:39 PM] mikiken#5554
+```C
+int array_test13() {
+  int a[5] = {1, 2, 3, 4, 5};
+  int sum = 0;
+  for (int i = 0; i < 5; i++)
+    sum += a[i];
+  return sum;
+}
+```
+
+
+[03/26/2023 4:42 PM] mikiken#5554
+この関数の`sum += a[i]`のところで型の不一致が起きてる
+
+
+[03/26/2023 4:46 PM] mikiken#5554
+右辺の配列`a`がポインタにキャストされてないのが原因っぽい
+
+
+[03/26/2023 4:55 PM] mikiken#5554
+`semantic_analysis()`で`ND_FOR`の`node->then`の構文木の意味解析をし忘れてるのが原因
+
+
+[03/26/2023 5:01 PM] mikiken#5554
+```C
+    case ND_FOR:
+      if (node->init)
+        semantic_analysis(node->init);
+      if (node->cond)
+        semantic_analysis(node->cond);
+      // for文の中身の処理
+      semantic_analysis(node->then);
+      if (node->inc)
+        semantic_analysis(node->inc);
+      // node自体の型はNULLのはず
+      if (node->type->kind == TYPE_NULL)
+        return;
+      else
+        error("semantic_analysis() : if文の意味解析を行うことができませんでした");
+```
+
+
+[03/26/2023 5:01 PM] mikiken#5554
+真ん中に1行追加したら`array.c`のコンパイルが通るようになった
+
+
+[03/26/2023 5:05 PM] mikiken#5554
+あと`pointer.c`を通せば、移植完了しそう
+
+
+[03/26/2023 5:06 PM] mikiken#5554
+`pointer.c`の`pointer_test12()`でコケてる
+
+
+[03/26/2023 5:32 PM] mikiken#5554
+```C
+int pointer_test12() {
+  int a[2];
+  int k;
+  k = &a[1] - &a[0];
+  return k;
+}
+```
+
+
+[03/26/2023 6:04 PM] mikiken#5554
+`ND_SUB`でポインタ同士の引き算をいい感じに意味解析するところのコード
+```C
+      // 両辺がポインタ型の場合
+      else if (is_ptr_type(node->lhs->type) && is_ptr_type(node->rhs->type)) {
+        if (node->lhs->type->ptr_to->kind != node->rhs->type->ptr_to->kind)
+          error("semantic_analysis() : 異なる型へのポインタ同士で減算を行うことはできません");
+        Node *size = new_size_node(node->lhs->type->ptr_to);
+        Node *diff_addr = new_typed_binary(new_typed_node(node->lhs->type, new_node(ND_SUB)), node->lhs, node->rhs);
+        *node = *new_typed_binary(new_typed_node(new_type(TYPE_INT), new_node(ND_DIV)), diff_addr, size);
+        return;
+      }
+```
+
+
+[03/26/2023 6:04 PM] mikiken#5554
+`node = new_typed_binary(~);`となっていたが、これでは`ND_ASSIGN`の`node->rhs`の参照先は古い構文木のままになってしまう。そこで、`*node = *new_typed_binary(~);`として、`Node *node`の参照先自体を新しい構文木に書き換える必要がある。
+
+
+[03/28/2023 12:49 PM] mikiken#5554
+これで、`pointer.c`のコンパイルも通るようになった
+
+
+[03/28/2023 12:50 PM] mikiken#5554
+`make test`すると、`string.c`でエラーが出るな
+
+
+[03/28/2023 12:51 PM] mikiken#5554
+```
+[FAIL] {char x[3]; x[0] = -1; x[1] = 2; int y; y = 4; return x[0] + y;} => 3 expected, but got -253
+```
+
+
+[03/28/2023 12:58 PM] mikiken#5554
+gdbで`char_type_test1()`からreturnした直後のraxの値を観察すると何か分かりそう
+
+
+[03/28/2023 8:57 PM] mikiken#5554
+gdbで調べた感じこんな感じっぽい
+
+{Attachments}
+https://cdn.discordapp.com/attachments/1003859454191751178/1090243350633914368/message.txt
+
+
+[03/31/2023 4:07 PM] mikiken#5554
+たぶん元々raxのビットがすべて立ってる状態`0xffffffff`から、raxの下位1byteのみ書き換えられた結果、`0xffffff03`というビットパターンになった
+
+
+[03/31/2023 4:09 PM] mikiken#5554
+なので`rax`のビットパターンの下位1byteのみを読むと、ちゃんと`3`という値になる
+
+
+[03/31/2023 4:10 PM] mikiken#5554
+一方で、`rax`のビットパターンを`(signed) int`として読むと、`0xff03`となるので、`-253`という値になる
+
+
+[03/31/2023 4:10 PM] mikiken#5554
+ってことだと思う
+
+
+[03/31/2023 5:23 PM] mikiken#5554
+とりあえず、古い実装が吐くアセンブリと新しい実装が吐くアセンブリの差分を取ってみた
+
+
+[03/31/2023 5:24 PM] mikiken#5554
+
+
+{Attachments}
+https://cdn.discordapp.com/attachments/1003859454191751178/1091276871473311754/message.txt
+
+
+[03/31/2023 5:29 PM] mikiken#5554
+少なくとも、表面的に出力されるアセンブリを比較すると、古い方ではきちんと`rdi`の下位1byteを読んでいる一方、新しい方では`rdi`の下位4byteを読んでしまっていることが分かる
+
+
+[03/31/2023 6:18 PM] mikiken#5554
+テストケースがデカいので、バグが再現するもう少し小さいテストケースを考える
+```C
+int printf();
+
+char char_type_test1() {
+  char x = -1;
+  int y = 4;
+  return x + y;
+}
+
+int main() {
+  printf("%d\n", char_type_test1());
+  return 0;
+}
+```
+
+
+[03/31/2023 6:22 PM] mikiken#5554
+
+
+{Attachments}
+https://cdn.discordapp.com/attachments/1003859454191751178/1091291456934776902/message.txt
+
+
+[03/31/2023 7:02 PM] mikiken#5554
+とりあえず、算術型の加減算のnode自体の型を全て`int`にすることで、ひとまず動くようになった
+
+
+[03/31/2023 7:13 PM] mikiken#5554
+`origin/master`と`master`の乖離がすごいことに
+
+
+[03/31/2023 7:13 PM] mikiken#5554
+
+
+{Attachments}
+https://cdn.discordapp.com/attachments/1003859454191751178/1091304333020237895/image.png
+
+
+[03/31/2023 7:13 PM] mikiken#5554
+さすがにコミットログが汚いので、きれいにしたい
+
+
+[03/31/2023 11:51 PM] mikiken#5554
+`git rebase -i`してたらconflict起きた
+
+
+[03/31/2023 11:52 PM] mikiken#5554
+```
+mikiken@DESKTOP-CM4259U:~/compiler/9cc$ git rebase -i HEAD~25
+Auto-merging src/semantic_analysis.c
+CONFLICT (content): Merge conflict in src/semantic_analysis.c
+error: could not apply 59f3168... `ND_ADD`,`ND_SUB`でnodeそのものの型をちゃんとした
+Resolve all conflicts manually, mark them as resolved with
+"git add/rm <conflicted_files>", then run "git rebase --continue".
+You can instead skip this commit: run "git rebase --skip".
+To abort and get back to the state before "git rebase", run "git rebase --abort".
+Could not apply 59f3168... `ND_ADD`,`ND_SUB`でnodeそのものの型をちゃんとした
+```
+
+
+[04/01/2023 1:36 AM] mikiken#5554
+やったーきれいになったぞー
+
+{Attachments}
+https://cdn.discordapp.com/attachments/1003859454191751178/1091400539255869490/image.png
+
+
+[04/02/2023 5:49 PM] mikiken#5554
+というわけでようやく多次元配列の実装に着手していく
+
+
+[04/02/2023 5:51 PM] mikiken#5554
+`int arr[3][5];`みたいな宣言に対して、`arr[2][4] = 3;`と書いたら、`*(*(arr + 2) + 4) = 3;`とパースするようには既になってるはず
+
+
+[04/02/2023 5:52 PM] mikiken#5554
+とりあえずコンパイルを試みると、`semantic_analysis() : 不正な加算を行うことはできません`というエラーが出るので、`semantic_analysis()`の`ND_ADD`で両辺の型の不一致が起こっていそう
+
+
+[04/02/2023 10:00 PM] mikiken#5554
+
+
+{Attachments}
+https://cdn.discordapp.com/attachments/1003859454191751178/1092071054555480156/image.png
+
+
+[04/03/2023 3:27 PM] mikiken#5554
+まず試しているテストケースはこれ
+```C
+int main() {
+  int arr[3][5];
+  *(*(arr + 2) + 4) = 3;
+  return *(*(arr + 2) + 4);
+}
+```
+
+
+[04/03/2023 3:27 PM] mikiken#5554
+何も考えずに、`./9cc a.c`したところ、`semantic_analysis() : 不正な加算を行うことはできません`が出た
+
+
+[04/03/2023 3:28 PM] mikiken#5554
+それはそう
+(`semantic_analysis()`において、左辺に配列型、右辺が`int`型の場合の処理が入っていないので)
+
+
+[04/03/2023 3:30 PM] mikiken#5554
+ということで、`ND_ADD`の処理で、左辺に配列型、右辺に`int`型が来た場合、サイズ調整用のnodeを付加するようなコードを追加した
+```C
+      // 左辺が配列型、右辺がint型の場合
+      if (is_array_type(node->lhs->type) && node->rhs->type->kind == TYPE_INT) {
+        // node自体の型は左辺の型に合わせる
+        node->type = node->lhs->type;
+        Node *size_node = new_size_node(node->lhs->type->ptr_to);
+        node->rhs = new_typed_binary(new_typed_node(new_type(TYPE_INT), new_node(ND_MUL)), size_node, node->rhs);
+        return;
+      }
+```
+
+
+[04/03/2023 3:30 PM] mikiken#5554
+再び`./9cc a.c`すると、`semantic_analysis() : ポインタでないものを間接参照することはできません`が出た
+
+
+[04/03/2023 3:32 PM] mikiken#5554
+今までは1次元配列しかなかったので、`ND_DEREF`の`lhs`には必ず(配列型がキャストされたことで生じた)ポインタ型が来ていたが、その前提が崩れた
+
+
+[04/03/2023 3:32 PM] mikiken#5554
+ということで、ひとまずコメントアウトしといた
+
+
+[04/03/2023 3:33 PM] mikiken#5554
+再びコンパイルを試みると、一部アセンブリが出力されるものの、途中で`codegen.c`において`レジスタに値をセットできませんでした`が出てるな
+
+
+[04/03/2023 7:48 PM] mikiken#5554
+とりあえずgdbを走らせて確認したところ、内側の`ND_DEREF`でレジスタに入っているアドレスを参照しようとしたところ、`mov_memory_to_register`に配列型の扱いがないため、エラーが出ているっぽい
+```C
+    case ND_DEREF:
+      gen_expr(node->lhs);
+      pop_addr(RDI);
+      mov_memory_to_register(node->type, RAX, RDI); // この関数で「レジスタに値をセットできませんでした」が出てる
+      push(node->type, RAX);
+      return;
+```
+
+
+[04/03/2023 7:50 PM] mikiken#5554
+`ND_DEREF`の`lhs`の型が、配列型(=ポインタ型ではない)である場合、`gen_expr(node->lhs);`で生成されたアドレスの中身を参照する処理を飛ばさなければいけないのでは?
+
+
+==============================================================
+Exported 290 message(s)
+==============================================================
