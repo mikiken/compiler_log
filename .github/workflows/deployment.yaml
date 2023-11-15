@@ -1,0 +1,53 @@
+name: Update submodule in mikiken/mikiken.net
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  update_submodules:
+    name: Update submodules
+    runs-on: ubuntu-20.04
+    permissions:
+      actions: write
+      checks: write
+      contents: write
+
+    steps:
+    - name: Generate token
+      id: generate_token
+      uses: tibdex/github-app-token@v1
+      with:
+        app_id: ${{secrets.APP_ID}}
+        private_key: ${{secrets.PRIVATE_KEY}}
+
+    - name: Checkout repository
+      uses: actions/checkout@v3
+      with:
+        repository: mikiken/mikiken.net
+        token: ${{ steps.generate_token.outputs.token }}
+        submodules: recursive
+      
+    - name: Configure git settings
+      run: |
+        git config --global user.name "mikiken"
+        git config --global user.email "mikiken.dev@gmail.com"
+    
+    - name: Change the revision of submodule
+      run: |
+        cd compiler_log
+        git fetch
+        git reset --hard origin/main
+
+    - name: Add and commit files
+      run: |
+        git status
+        git add .
+        git commit -m "update submodule: mikiken/compiler_log@${GITHUB_SHA}"
+
+    - name: Push changes
+      run : git push origin main
